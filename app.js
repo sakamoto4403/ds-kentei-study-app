@@ -2,7 +2,7 @@
 
 const STORAGE_KEYS = { questions: "ds_kentei_app_questions_v1", progress: "ds_kentei_app_progress_v1" };
 const state = { questions: null, progress: null, view: "top", session: null, history: { category: "all", status: "all", sort: "id" }, storage: { questionsMissing: false, progressMissing: false } };
-const views = Object.fromEntries(["top", "practice", "summary", "history", "data"].map((name) => [name, document.querySelector(`#${name}-view`)]));
+const views = Object.fromEntries(["top", "practice", "summary", "textbook", "history", "data"].map((name) => [name, document.querySelector(`#${name}-view`)]));
 
 function initialProgress() { return { version: 1, records: {}, categoryStatus: {}, resumePointer: {} }; }
 function saveProgress() { localStorage.setItem(STORAGE_KEYS.progress, JSON.stringify(state.progress)); }
@@ -27,15 +27,20 @@ function categoryStatus(category) { return state.progress.categoryStatus[categor
 function metrics(questionList) { const answered = questionList.filter((q) => state.progress.records[String(q.id)]).length; const correct = questionList.filter((q) => state.progress.records[String(q.id)]?.lastResult === "correct").length; return { answered, total: questionList.length, rate: percent(correct, questionList.length) }; }
 function formatDate(iso) { if (!iso || Number.isNaN(new Date(iso).getTime())) return null; const d = new Date(iso); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 
-function setView(view) { state.view = view; Object.entries(views).forEach(([name, element]) => element.hidden = name !== view); ({ top: renderTop, practice: renderPractice, summary: renderSummary, history: renderHistory, data: renderData })[view](); }
+function setView(view) { state.view = view; Object.entries(views).forEach(([name, element]) => element.hidden = name !== view); ({ top: renderTop, practice: renderPractice, summary: renderSummary, textbook: renderTextbook, history: renderHistory, data: renderData })[view](); }
 function renderTop() {
   const questions = allQuestions(), overall = metrics(questions), weak = questions.filter((q) => state.progress.records[String(q.id)]?.lastResult === "incorrect"), date = formatDate(state.progress.lastExportedAt);
   const meta = state.questions?.meta;
-  views.top.innerHTML = `<div class="top-header"><h1 id="top-title">DS検定学習</h1><button class="text-link" id="history">解答履歴</button></div>${meta?.exam || meta?.syllabusVersion ? `<p class="metadata">${[meta.exam,meta.syllabusVersion].filter(Boolean).join("｜")}</p>` : ""}<div class="summary"><p class="summary-line">解答済 ${overall.answered}/${overall.total}問 ／ 全体正答率 ${overall.rate}</p><p class="${date ? "" : "export-status"}">最終エクスポート：${date || "未エクスポート"}</p></div><div class="actions"><button id="data">データ管理</button><button id="weak" ${weak.length ? "" : "disabled"}>苦手問題を復習する（全分野横断）</button></div><p class="help-text" ${weak.length ? "hidden" : ""}>苦手問題はありません</p><div id="guidance"></div><div id="content"></div>`;
+  views.top.innerHTML = `<div class="top-header"><h1 id="top-title">DS検定学習</h1><button class="text-link" id="history">解答履歴</button></div>${meta?.exam || meta?.syllabusVersion ? `<p class="metadata">${[meta.exam,meta.syllabusVersion].filter(Boolean).join("｜")}</p>` : ""}<div class="summary"><p class="summary-line">解答済 ${overall.answered}/${overall.total}問 ／ 全体正答率 ${overall.rate}</p><p class="${date ? "" : "export-status"}">最終エクスポート：${date || "未エクスポート"}</p></div><div class="actions"><button id="data">データ管理</button><button id="weak" ${weak.length ? "" : "disabled"}>苦手問題を復習する（全分野横断）</button></div><p class="help-text" ${weak.length ? "hidden" : ""}>苦手問題はありません</p><div id="guidance"></div><div id="textbook-entry"></div><div id="content"></div>`;
   views.top.querySelector("#data").onclick = () => setView("data"); views.top.querySelector("#history").onclick = () => openHistory(); views.top.querySelector("#weak").onclick = () => startReview(weak);
   if (state.storage.questionsMissing || state.storage.progressMissing) views.top.querySelector("#guidance").innerHTML = `<div class="notice">${state.storage.questionsMissing ? "<p>問題データを読み込んでください。</p>" : ""}${state.storage.progressMissing ? "<p>学習記録を復元してください。</p>" : ""}</div>`;
   const content = views.top.querySelector("#content");
   if (!state.questions) { content.innerHTML = `<div class="notice"><h2>問題データがありません</h2><p class="help-text">問題データ（questions.json）を読み込んでください。</p><label class="file-button">問題データを読み込む<input id="question-file" type="file" accept="application/json,.json"></label><p id="error" class="error-message" role="alert"></p></div>`; content.querySelector("#question-file").onchange = handleQuestionFile; return; }
+  const textbookEntry = views.top.querySelector("#textbook-entry");
+  textbookEntry.className = "textbook-entry";
+  textbookEntry.innerHTML = `<h2>教科書モードで読む</h2><p class="help-text">解答・解説を見ながら、問題を通しで読めます（採点なし）</p><div class="textbook-entry-list"></div>`;
+  const textbookList = textbookEntry.querySelector(".textbook-entry-list");
+  categories().forEach((category) => { const button = document.createElement("button"); button.type = "button"; button.textContent = `分野${categoryIndex(category)}　${category.title}`; button.onclick = () => openTextbook(category); textbookList.append(button); });
   const list = document.createElement("div"); list.className = "category-list"; categories().forEach((category) => list.append(categoryCard(category))); content.append(list);
 }
 function categoryCard(category) {
@@ -45,7 +50,28 @@ function categoryCard(category) {
   if (status === "not_started") button("演習を始める", () => startPractice(category, false));
   if (status === "in_progress") { button("続きから再開", () => startPractice(category, true)); button("最初から解き直す", () => startPractice(category, false), true); }
   if (status === "completed") { button("もう一度解く", () => startPractice(category, false)); button("間違えた問題だけ復習", () => startReview(sortedQuestions(category).filter((q) => state.progress.records[String(q.id)]?.lastResult === "incorrect")), true, !incorrect); }
+  button("教科書で読む", () => openTextbook(category), true);
   return card;
+}
+
+function openTextbook(category) { state.session = { mode: "textbook", category }; setView("textbook"); }
+function renderTextbook() {
+  const category = state.session.category, questions = sortedQuestions(category), index = categories().indexOf(category), next = categories()[index + 1];
+  views.textbook.innerHTML = `<div class="textbook-header"><h1>分野${categoryIndex(category)}　${category.title}</h1><button class="text-link" id="textbook-back">トップに戻る</button></div><nav class="textbook-toc" aria-label="問題目次"></nav><div class="textbook-list"></div><div class="textbook-footer"><button class="secondary" id="textbook-bottom-back">トップに戻る</button>${next ? '<button id="textbook-next">次の分野を読む</button>' : ""}</div>`;
+  views.textbook.querySelector("#textbook-back").onclick = () => setView("top");
+  views.textbook.querySelector("#textbook-bottom-back").onclick = () => setView("top");
+  if (next) views.textbook.querySelector("#textbook-next").onclick = () => openTextbook(next);
+  const toc = views.textbook.querySelector(".textbook-toc"), list = views.textbook.querySelector(".textbook-list");
+  questions.forEach((question) => {
+    const anchorId = `textbook-question-${question.id}`, link = document.createElement("a"); link.href = `#${anchorId}`; link.textContent = question.id; toc.append(link);
+    const article = document.createElement("article"); article.className = "textbook-question"; article.id = anchorId;
+    const number = document.createElement("p"); number.className = "textbook-question-number"; number.textContent = `問${question.id}`;
+    const text = document.createElement("p"); text.className = "question-text"; text.textContent = question.text;
+    const choices = document.createElement("div"); choices.className = "choice-list";
+    question.choices.forEach((choice) => { const item = document.createElement("p"); item.className = "choice-button textbook-choice"; item.textContent = `${choice.key}　${choice.text}`; if (choice.key === question.answer) item.classList.add("correct-choice"); choices.append(item); });
+    const explanation = document.createElement("div"); explanation.className = "textbook-explanation"; explanation.innerHTML = "<strong>解説</strong>"; const explanationText = document.createElement("p"); explanationText.textContent = question.explanation; explanation.append(explanationText);
+    const divider = document.createElement("hr"); article.append(number, text, choices, explanation, divider); list.append(article);
+  });
 }
 
 function startPractice(category, resume) { const questions = sortedQuestions(category), pointer = state.progress.resumePointer[category.categoryId], index = resume ? questions.findIndex((q) => q.id === pointer) : -1; state.session = { mode:"practice", category, questions, index: index >= 0 ? index : 0, selected:null, answered:false, sessionResults:[] }; setView("practice"); }
