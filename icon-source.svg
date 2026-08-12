@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">DS検定学習アプリアイコン</title>
+  <desc id="desc">青い背景にDSの文字とデータ分析を表すノード</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#123b72"/>
+      <stop offset="1" stop-color="#1e71a8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#background)"/>
+  <path d="M104 357L193 281L270 322L401 174" fill="none" stroke="#62d5e6" stroke-linecap="round" stroke-linejoin="round" stroke-width="20"/>
+  <circle cx="104" cy="357" r="22" fill="#62d5e6"/>
+  <circle cx="193" cy="281" r="22" fill="#62d5e6"/>
+  <circle cx="270" cy="322" r="22" fill="#62d5e6"/>
+  <circle cx="401" cy="174" r="22" fill="#62d5e6"/>
+  <text x="256" y="247" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="152" font-weight="700" letter-spacing="-12" text-anchor="middle">DS</text>
+</svg>
